@@ -1,92 +1,135 @@
 import 'package:meta/meta.dart';
 
-/// Parses a shell-style string [input] into a list of arguments.
+export 'src/argv.dart';
+
+/// A simple argument parser result and with support for strings only.
 ///
-/// ```dart
-/// // [-x, 3, -y, 4, -abc, -beep=boop, foo, bar, baz]
-/// print(argv('-x 3 -y 4 -abc -beep=boop foo "bar" \'baz\''));
-/// ```
+/// ## Equality
 ///
-/// **WARNING**: This API is experimental, and may change without bumping major
-/// releases. Once the rest of the API gets into a stable state, this condition
-/// will be relaxed.
-@experimental
-List<String> argv(String input) {
-  const $space = 0x20;
-  const $tab = 0x09;
-  const $newLine = 0x0a;
-  const $backSlash = 0x5c;
-  const $doubleQuote = 0x22;
-  const $singleQuote = 0x27;
+/// Both [==] and [hashCode] are _structurally_ checked; a [StringArgs] is
+/// equal to another (and produces the same hash) if [parameters] are both
+/// present and in the exact same order, while [options] are considered
+/// unordered.
+@immutable
+@sealed
+class StringArgs {
+  /// Positional parameters that were parsed.
+  final List<String> parameters;
 
-  final output = <String>[];
-  StringBuffer? argument;
-  int startingQuoteIndex;
+  /// Named options that were parsed, normally as a [String].
+  ///
+  /// An option that was parsed more than once is stored as a `List<String>`.
+  final Map<String, Object> options;
 
-  for (var i = 0; i < input.length; i++) {
-    final code = input.codeUnitAt(i);
+  const StringArgs._(this.parameters, this.options);
 
-    // If we've started an argument, then end it, otherwise keep waiting.
-    if (code == $space || code == $tab || code == $newLine) {
-      if (argument != null) {
-        output.add(argument.toString());
-        argument = null;
-      }
-      continue;
+  static String _entryToString(MapEntry<Object?, Object?> e) {
+    return '${e.key}=${e.value}';
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      Object.hashAll(parameters),
+      Object.hashAllUnordered(options.entries.map(_entryToString)),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! StringArgs ||
+        parameters.length != other.parameters.length ||
+        options.length != other.options.length) {
+      return false;
     }
-
-    // Start composing a new argument.
-    argument ??= StringBuffer();
-
-    switch (code) {
-      case $backSlash:
-        if (i + 1 < input.length) {
-          final lookAhead = input.codeUnitAt(i + 1);
-          switch (lookAhead) {
-            case $space:
-            case $tab:
-            case $newLine:
-              break;
-            default:
-              argument.writeCharCode(lookAhead);
-              break;
+    for (var i = 0; i < parameters.length; i++) {
+      if (parameters[i] != other.parameters[i]) {
+        return false;
+      }
+    }
+    for (final option in options.entries) {
+      final a = option.value;
+      final b = other.options[option.key];
+      if (a is String) {
+        return b is String && a == b;
+      } else {
+        final aList = a as List<String>;
+        if (b is List<String> && a.length == b.length) {
+          final bList = b;
+          for (var i = 0; i < aList.length; i++) {
+            if (aList[i] != bList[i]) {
+              return false;
+            }
           }
         } else {
-          throw FormatException(
-            'Unexpected terminal backslash',
-            input,
-            input.length - 1,
-          );
+          return false;
         }
-        i++;
-        break;
-      case $doubleQuote:
-      case $singleQuote:
-        startingQuoteIndex = i;
-        while (++i < input.length) {
-          if (code == input.codeUnitAt(i)) {
-            argument.write(input.substring(startingQuoteIndex + 1, i));
-            break;
-          }
-        }
-        if (i == input.length) {
-          final type = code == $doubleQuote ? 'double' : 'single';
-          throw FormatException(
-            'Unterminated $type quote',
-            input,
-            startingQuoteIndex,
-          );
-        }
-        break;
-      default:
-        argument.writeCharCode(code);
-        break;
+      }
+    }
+    return true;
+  }
+
+  @override
+  String toString() {
+    final output = StringBuffer();
+    const StringArgsPrinter().print(this, output);
+    return output.toString();
+  }
+}
+
+/// Prints a string representation of [StringArgs], often for debugging.
+@immutable
+@sealed
+class StringArgsPrinter {
+  final bool _preferQuotes;
+  final bool _preferSingle;
+
+  /// Creates a default printer that only quotes values if necessary.
+  const StringArgsPrinter()
+      : _preferQuotes = false,
+        _preferSingle = false;
+
+  /// Creates a default printer that prefers quoting values with single quotes.
+  const StringArgsPrinter.preferSingleQuotes()
+      : _preferQuotes = true,
+        _preferSingle = true;
+
+  /// Creates a default printer that prefers quoting values with double quotes.
+  const StringArgsPrinter.preferDoubleQuotes()
+      : _preferQuotes = true,
+        _preferSingle = false;
+
+  static final _whitespace = RegExp(r'\w');
+
+  /// As-needed, wraps and returns [input] in quotes.
+  ///
+  /// How this method behaves depends on [_preferQuotes] and [_preferSingle].
+  String _quote(String input) {
+    if (input.contains(_whitespace) || _preferQuotes) {
+      final q = _preferSingle ? "'" : '"';
+      return '$q$input$q';
+    } else {
+      return input;
     }
   }
 
-  if (argument != null && argument.isNotEmpty) {
-    output.add(argument.toString());
+  /// Wraps and returns [input] as an option assignment.
+  String _option(MapEntry<String, Object> input) {
+    final key = input.key.length == 1 ? '-${input.key}' : '--${input.key}';
+    final value = input.value;
+    if (value is String) {
+      return value.isEmpty ? key : '$key=${_quote(value)}';
+    } else if (value is List<String>) {
+      return value.map((e) => e.isEmpty ? key : '$key=${_quote(e)}').join(' ');
+    } else {
+      throw StateError('Unexpected: $value');
+    }
   }
 
-  return output;
+  /// Prints a text representation of [args] to the provided [output].
+  void print(StringArgs args, StringSink output) {
+    output
+      ..writeAll(args.parameters.map(_quote), ' ')
+      ..writeAll(args.options.entries.map(_option), ' ');
+  }
 }

@@ -19,7 +19,10 @@ A fluent and idiomatic argument parser (usually for command-line apps) in Dart.
 [sty_url]: https://pub.dev/packages/neodart
 [sty_img]: https://img.shields.io/badge/style-neodart-9cf.svg
 
-Currently, this library is a stub. More will be added in the near future.
+This library supports parsing [GNU][] and [POSIX][]-style options.
+
+[gnu]: https://www.gnu.org/prep/standards/standards.html#Command_002dLine-Interfaces
+[posix]: https://pubs.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap12.html#tag_12_02
 
 ## Usage
 
