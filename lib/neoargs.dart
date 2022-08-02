@@ -37,22 +37,29 @@ class StringArgs {
 
   @override
   bool operator ==(Object other) {
+    // Early exit if different object OR with a different amount of arguments.
     if (other is! StringArgs ||
         parameters.length != other.parameters.length ||
         options.length != other.options.length) {
       return false;
     }
+
+    // Every positional parameter must be the same AND in the same order.
     for (var i = 0; i < parameters.length; i++) {
       if (parameters[i] != other.parameters[i]) {
         return false;
       }
     }
+
+    // Every named option must be the same (but without ordering guarantees).
     for (final option in options.entries) {
       final a = option.value;
       final b = other.options[option.key];
       if (a is String) {
+        // String options must be the same as other strings.
         return b is String && a == b;
       } else {
+        // List options must be the same as other strings AND in the same order.
         final aList = a as List<String>;
         if (b is List<String> && a.length == b.length) {
           final bList = b;
@@ -66,38 +73,30 @@ class StringArgs {
         }
       }
     }
+
+    // By this point, the objects are (structurally) equivalent.
     return true;
   }
 
   @override
   String toString() {
     final output = StringBuffer();
-    const StringArgsPrinter().print(this, output);
+    const _StringArgsPrinter().print(this, output);
     return output.toString();
   }
 }
 
 /// Prints a string representation of [StringArgs], often for debugging.
+///
+/// In a future release this can be made public for customized output.
 @immutable
 @sealed
-class StringArgsPrinter {
-  final bool _preferQuotes;
-  final bool _preferSingle;
+class _StringArgsPrinter {
+  static const _preferQuotes = false;
+  static const _preferSingle = false;
 
   /// Creates a default printer that only quotes values if necessary.
-  const StringArgsPrinter()
-      : _preferQuotes = false,
-        _preferSingle = false;
-
-  /// Creates a default printer that prefers quoting values with single quotes.
-  const StringArgsPrinter.preferSingleQuotes()
-      : _preferQuotes = true,
-        _preferSingle = true;
-
-  /// Creates a default printer that prefers quoting values with double quotes.
-  const StringArgsPrinter.preferDoubleQuotes()
-      : _preferQuotes = true,
-        _preferSingle = false;
+  const _StringArgsPrinter();
 
   static final _whitespace = RegExp(r'\w');
 
@@ -106,7 +105,7 @@ class StringArgsPrinter {
   /// How this method behaves depends on [_preferQuotes] and [_preferSingle].
   String _quote(String input) {
     if (input.contains(_whitespace) || _preferQuotes) {
-      final q = _preferSingle ? "'" : '"';
+      const q = _preferSingle ? "'" : '"';
       return '$q$input$q';
     } else {
       return input;
