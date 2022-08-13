@@ -1,4 +1,4 @@
-import 'package:meta/meta.dart';
+part of '../neoargs.dart';
 
 /// Parses a shell-style string [input] into a list of arguments.
 ///
