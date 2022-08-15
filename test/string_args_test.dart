@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_literals_to_create_immutables
+// ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_declarations
 
 import 'package:neoargs/neoargs.dart';
 import 'package:test/test.dart';
@@ -40,6 +40,10 @@ void main() {
       test('optionalMany should return an empty list', () {
         expect(namedA.optionalMany(), isEmpty);
       });
+
+      test('wasPresent should be false', () {
+        expect(namedA.wasPresent, isFalse);
+      });
     });
 
     group('.oneValue', () {
@@ -76,6 +80,10 @@ void main() {
 
       test('optionalMany should return a list with the provided value', () {
         expect(namedA.optionalMany(), ['b']);
+      });
+
+      test('wasPresent should be true', () {
+        expect(namedA.wasPresent, isTrue);
       });
     });
 
@@ -130,6 +138,105 @@ void main() {
 
       test('optionalMany should return a list with the provided values', () {
         expect(namedA.optionalMany(), ['b', 'c']);
+      });
+
+      test('wasPresent should be true', () {
+        expect(namedA.wasPresent, isTrue);
+      });
+    });
+  });
+
+  group('StringArgs', () {
+    test('.empty should be empty', () {
+      final empty = StringArgs.empty;
+      expect(empty.length, 0);
+      expect(empty.parametersToList(), isEmpty);
+      expect(empty.optionsToMap(), isEmpty);
+    });
+
+    group('.from', () {
+      test('support no arguments (empty)', () {
+        expect(StringArgs.from([]), StringArgs.empty);
+        expect(StringArgs.from([], {}), StringArgs.empty);
+      });
+
+      test('should support parameters', () {
+        final args = StringArgs.from(['a', 'b']);
+        expect(args, hasLength(2));
+        expect(args.requireParameter(0), 'a');
+        expect(args.requireParameter(1), 'b');
+        expect(args.optionalParameter(2), isNull);
+      });
+
+      test('should support single value options', () {
+        final args = StringArgs.from([], {'foo': 'bar'});
+        expect(args.getOption('foo').requireFirst(), 'bar');
+      });
+
+      test('should support multi value options', () {
+        final args = StringArgs.from([], {
+          'foo': ['bar', 'baz']
+        });
+        expect(args.getOption('foo').requireMany(), ['bar', 'baz']);
+      });
+
+      test('should reject invalid values', () {
+        expect(() => StringArgs.from([], {'foo': 1}), throwsArgumentError);
+        expect(() => StringArgs.from([], {'foo': true}), throwsArgumentError);
+        expect(
+          () => StringArgs.from([], {
+            'foo': [1]
+          }),
+          throwsArgumentError,
+        );
+      });
+
+      test('should be structurally equivalent', () {
+        final a = StringArgs.from([
+          'a'
+        ], {
+          'b': 'c',
+          'd': ['e', 'f']
+        });
+        final b = StringArgs.from([
+          'a'
+        ], {
+          'b': 'c',
+          'd': ['e', 'f']
+        });
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+      });
+
+      test('should return a list representations of the parameters', () {
+        expect(StringArgs.from(['a', 'b']).parametersToList(), ['a', 'b']);
+      });
+
+      test('should return a map representations of the options', () {
+        expect(
+          StringArgs.from([], {
+            'a': 'b',
+            'c': ['d', 'e'],
+          }).optionsToMap(),
+          {
+            'a': StringArgsOption.oneValue('a', 'b'),
+            'c': StringArgsOption.manyValues('c', ['d', 'e']),
+          },
+        );
+      });
+
+      test('should have a readable toString', () {
+        expect(StringArgs.empty.toString(), '');
+        expect(StringArgs.from(['a']).toString(), 'a');
+        expect(StringArgs.from(['a'], {'b': 'c'}).toString(), 'a -b c');
+        expect(
+          StringArgs.from([
+            'a'
+          ], {
+            'name': ['foo', 'bar']
+          }).toString(),
+          'a --name foo --name bar',
+        );
       });
     });
   });

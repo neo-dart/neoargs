@@ -2,6 +2,305 @@
 
 part of '../neoargs.dart';
 
+/// A set of parameters (positional arguments) and options (named arguments).
+///
+/// [StringArgs] is intended to be the _simplest_ **complete** way to parse and
+/// refer to parsed command-line [String] arguments, similar to the NPM package
+/// [minimist][]:
+///
+/// ```dart
+/// import 'dart:io';
+///
+/// /// Example that parses `<source> --recursive` and calls [File.createSync].
+/// void main(List<String> args) {
+///   final parsed = StringArgs.parse(args);
+///   final target = parsed.requireParameter(0, 'target');
+///   final recursive = parsed.getOption('recursive').optionalOnce() == '';
+///   File(target).createSync(recursive: recursive);
+/// }
+/// ```
+///
+/// [minimist]: https://www.npmjs.com/package/minimist
+///
+/// ## Equality
+///
+/// Instances of this class are considered structurally equal ([==], [hashCode])
+/// if and only if they contain exactly the same positional arguments (in the
+/// same order) and exactly the same named arguments - however, **order is not
+/// considered** for the options themselves:
+///
+/// ```sh
+/// # All of these arguments would be considered structurally equal.
+/// foo bar --option a --option b
+/// foo --option a bar --option b
+/// --option a --option b foo bar
+///
+/// # These the arguments are not considered structurally equal.
+/// foo bar --option a --option b
+/// foo bar --option b --option a
+/// bar foo --option a --option b
+/// ```
+@immutable
+@sealed
+abstract class StringArgs {
+  /// [StringArgs] that is considered to have no parameters or options.
+  ///
+  /// This field can be used as a default parameter, i.e.:
+  /// ```dart
+  /// void run([StringArgs args = StringArgs.empty]) {
+  ///   // ...
+  /// }
+  /// ```
+  static const StringArgs empty = _StringArgs([], {});
+
+  /// Creates [StringArgs] from the provided [parameters] and [options].
+  ///
+  /// Valid values for [options] must be either `String` or `Iterable<String>`.
+  ///
+  /// While this constructor can be useful for some forms of testing, it is
+  /// recommended to **prefer** using [StringArgs.parse], potentially combined
+  /// with [argv], in order to better simulate real-world conditions:
+  ///
+  /// ```dart
+  /// void runWith(StringArgs args) { /* ... */ }
+  ///
+  /// test('should foo when foo is enabled', () {
+  ///   // Example code.
+  ///   expect(runWith(StringArgs.parse(argv('--foo=true))), doesFoo);
+  /// });
+  /// ```
+  factory StringArgs.from(
+    Iterable<String> parameters, [
+    Map<String, Object> options = const {},
+  ]) {
+    return _StringArgs(List.of(parameters), options.map((key, value) {
+      if (value is String) {
+        return MapEntry(key, StringArgsOption.oneValue(key, value));
+      } else if (value is Iterable<String>) {
+        return MapEntry(key, StringArgsOption.manyValues(key, value));
+      } else {
+        throw ArgumentError('Unexpected value ($key): $value.');
+      }
+    }));
+  }
+
+  /// Parses and returns arguments.
+  ///
+  /// [args] is expected to be pre-parsed command-line arguments, i.e. either
+  /// from a `void main(List<String> args)` function, created by [argv], or
+  /// something similar.
+  factory StringArgs.parse(List<String> args) {
+    const $space = 0x20;
+    const $dash = 0x2d;
+    const $equals = 0x3d;
+
+    final parameters = <String>[];
+    final options = <String, List<String>>{};
+
+    // True once '--' is parsed an argument.
+    var reachedEndOfOptions = false;
+
+    for (final arg in args) {
+      // If we've already parsed "--", the argument is empty, or not an option.
+      if (reachedEndOfOptions || arg.isEmpty || arg.codeUnitAt(0) != $dash) {
+        parameters.add(arg);
+        continue;
+      }
+
+      // Spot check that the logic above is WAI, i.e. all options at this point.
+      assert(arg.codeUnitAt(0) == $dash, 'Expected "-", got "${arg[0]}"');
+
+      // "Long" option, i.e. "--name" versus "-n".
+      final longOption = arg.length > 1 && arg.codeUnitAt(1) == $dash;
+
+      // An explicit parsing of "--" means "stop parsing options going forward".
+      if (longOption && arg.length == 2) {
+        reachedEndOfOptions = true;
+        continue;
+      }
+
+      final String name;
+      final String value;
+
+      if (!longOption) {
+        // Short options are either "-nvalue" or "-n value".
+        name = arg[1];
+        value = arg.substring(arg.codeUnitAt(2) == $space ? 3 : 2);
+      } else {
+        // Long options are either "--name value" or "--name=value".
+        var delimiter = arg.length - 1;
+        for (var i = 2; i < arg.length; i++) {
+          final codeUnit = arg.codeUnitAt(i);
+          if (codeUnit == $equals || codeUnit == $space) {
+            delimiter = i;
+            break;
+          }
+        }
+        name = arg.substring(0, delimiter);
+        value = arg.substring(delimiter + 1);
+      }
+
+      (options[name] ??= []).add(value);
+    }
+    return _StringArgs(
+      parameters,
+      options.map(
+        (k, v) => MapEntry(
+          k,
+          v.length > 1
+              ? StringArgsOption.manyValues(k, v)
+              : StringArgsOption.oneValue(k, v.first),
+        ),
+      ),
+    );
+  }
+
+  const StringArgs._();
+
+  /// Returns a wrapper around the value, if any, for the provided named option.
+  ///
+  /// As all options are treated as strings, a value of an empty string (`''`)
+  /// could be treated as `true`, i.e. the representation of `--verbose`.
+  StringArgsOption getOption(String name);
+
+  /// Number of positional parameters.
+  ///
+  /// This method can be used to expect a certain number of parameters:
+  /// ```dart
+  /// void example(StringArgs args) {
+  ///   if (args.length != 2) {
+  ///     print('Expected <source> <destination>');
+  ///   }
+  /// }
+  /// ```
+  int get length;
+
+  /// Returns the value of the positional parameter of the provided index.
+  ///
+  /// If [index] equals or exceeds [length], an error is thrown. An optional
+  /// [debugName] may be provided in order to throw a more descriptive error
+  /// message (for debugging purposes only).
+  @nonVirtual
+  String requireParameter(int index, {String? debugName}) {
+    final value = optionalParameter(index);
+    if (value == null) {
+      if (debugName == null) {
+        throw StateError('No parameter #$index');
+      } else {
+        throw StateError('No parameter #$index ($debugName)');
+      }
+    }
+    return value;
+  }
+
+  /// Returns the value of the positional parameter of the provided index.
+  ///
+  /// If [index] equals or exceeds [length], `null` is returned.
+  String? optionalParameter(int index);
+
+  /// Returns a collection of all positional parameters as a list.
+  ///
+  /// Order is guaranteed to be identical to parsing order.
+  ///
+  /// **NOTE**: For reading specific parameters, it is recommended to use the
+  /// [requireParameter] or [optionalParameter] method for more consistent
+  /// behavior with options.
+  List<String> parametersToList();
+
+  /// Returns a collection of all named options as a map.
+  ///
+  /// Order is guaranteed to be identical to parsing order.
+  ///
+  /// **NOTE**: For reading specific options, it is recommended to use the
+  /// [getOption] method, as a missing (but expected) option will return an
+  /// instance of [StringArgsOption.noValue], while this function will never
+  /// return options that were not parsed ([StringArgsOption.wasPresent]).
+  Map<String, StringArgsOption> optionsToMap();
+}
+
+@immutable
+@sealed
+class _StringArgs extends StringArgs {
+  // Positional arguments with parsing order preserved.
+  final List<String> _parameters;
+
+  /// Named arguments with parsing order preserved.
+  final Map<String, StringArgsOption> _options;
+
+  const _StringArgs(this._parameters, this._options) : super._();
+
+  @override
+  bool operator ==(Object other) {
+    // Obvious issues: different type, different amount of arguments.
+    if (other is! _StringArgs ||
+        _parameters.length != other._parameters.length ||
+        _options.length != other._options.length) {
+      return false;
+    }
+
+    // Different values for parameters.
+    for (var i = 0; i < _parameters.length; i++) {
+      if (_parameters[i] != other._parameters[i]) {
+        return false;
+      }
+    }
+
+    // Different names, values, or number of values for options.
+    final entries = _options.entries.toList();
+    final others = other._options.entries.toList();
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].key != others[i].key ||
+          entries[i].value.length != others[i].value.length) {
+        return false;
+      }
+      final a = entries[i].value.optionalMany();
+      final b = entries[i].value.optionalMany();
+      for (var n = 0; n < a.length; n++) {
+        if (a[n] != b[n]) {
+          return false;
+        }
+      }
+    }
+
+    // Structurally equivalent.
+    return true;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      Object.hashAll(_parameters),
+      Object.hashAll(_options.values),
+    );
+  }
+
+  @override
+  StringArgsOption getOption(String name) {
+    return _options[name] ?? StringArgsOption.noValue(name);
+  }
+
+  @override
+  int get length => _parameters.length;
+
+  @override
+  String? optionalParameter(int index) {
+    RangeError.checkNotNegative(index, 'index');
+    if (index >= length) {
+      return null;
+    }
+    return _parameters[index];
+  }
+
+  @override
+  Map<String, StringArgsOption> optionsToMap() => Map.of(_options);
+
+  @override
+  List<String> parametersToList() => _parameters.toList();
+
+  @override
+  String toString() => [..._parameters, ..._options.values].join(' ');
+}
+
 /// A parsed named option pair (i.e. `--name=value`).
 ///
 /// Possible invariants:
@@ -64,6 +363,43 @@ abstract class StringArgsOption {
   /// Private constructor used for inheritance only.
   const StringArgsOption._(this.name);
 
+  /// How many values are present for the option.
+  int get length;
+
+  /// Whether this option was considered _present_, or as a result of parsing.
+  ///
+  /// When possible it is recommended to either...
+  ///
+  /// **Explicitly fail**:
+  ///
+  /// ```dart
+  /// void example(StringArgsOption name) {
+  ///   print('Name was: ${name.requireOnly()}');
+  /// }
+  /// ```
+  ///
+  /// **Gracefully handle**:
+  ///
+  /// ```dart
+  /// void example(StringArgsOption name) {
+  ///   print('Name was: ${name.optionalOnly() ?? 'GUEST'}');
+  /// }
+  /// ```
+  ///
+  /// Otherwise, [wasPresent] is the canonical way of explicitly checking for
+  /// [StringArgsOption.noValue] (i.e. without calling a function that throws
+  /// or returns a default value):
+  ///
+  /// ```dart
+  /// void example(StringArgsOption name) {
+  ///   if (!name.wasPresent) {
+  ///     // Custom error message versus throwing with requireOnly.
+  ///     print('"name" argument is required');
+  ///   }
+  /// }
+  /// ```
+  bool get wasPresent => true;
+
   /// Returns the value (or first value of many) associated with this option.
   ///
   /// - If omitted, an error is thrown.
@@ -125,6 +461,12 @@ class _NoneStringArgsOption extends StringArgsOption {
   const _NoneStringArgsOption(String name) : super._(name);
 
   @override
+  bool get wasPresent => false;
+
+  @override
+  int get length => 0;
+
+  @override
   bool operator ==(Object other) {
     return other is _NoneStringArgsOption && name == other.name;
   }
@@ -140,6 +482,9 @@ class _NoneStringArgsOption extends StringArgsOption {
 
   @override
   List<String> optionalMany() => const [];
+
+  @override
+  String toString() => 'None <$name>';
 }
 
 @immutable
@@ -148,6 +493,9 @@ class _OneValueStringArgsOption extends StringArgsOption {
   final String _value;
 
   const _OneValueStringArgsOption(String name, this._value) : super._(name);
+
+  @override
+  int get length => 1;
 
   @override
   bool operator ==(Object other) {
@@ -165,6 +513,12 @@ class _OneValueStringArgsOption extends StringArgsOption {
 
   @override
   List<String> optionalMany() => [_value];
+
+  @override
+  String toString() {
+    final output = '${name.length == 1 ? '-' : '--'}$name';
+    return _value.isEmpty ? output : '$output $_value';
+  }
 }
 
 @immutable
@@ -183,6 +537,9 @@ class _ManyValuesStringArgsOption extends StringArgsOption {
       );
     }
   }
+
+  @override
+  int get length => _values.length;
 
   @override
   bool operator ==(Object other) {
@@ -213,4 +570,9 @@ class _ManyValuesStringArgsOption extends StringArgsOption {
 
   @override
   List<String> optionalMany() => _values.toList();
+
+  @override
+  String toString() {
+    return _values.map((v) => _OneValueStringArgsOption(name, v)).join(' ');
+  }
 }
