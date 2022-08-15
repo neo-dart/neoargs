@@ -484,9 +484,6 @@ class _NoneStringArgsOption extends StringArgsOption {
 
   @override
   List<String> optionalMany() => const [];
-
-  @override
-  String toString() => 'None <$name>';
 }
 
 @immutable

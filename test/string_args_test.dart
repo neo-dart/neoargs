@@ -166,6 +166,25 @@ void main() {
         expect(args.requireParameter(0), 'a');
         expect(args.requireParameter(1), 'b');
         expect(args.optionalParameter(2), isNull);
+        expect(() => args.requireParameter(3), throwsStateError);
+        expect(
+          () => args.requireParameter(3, debugName: 'three'),
+          throwsA(
+            isA<StateError>().having(
+              (e) => '$e',
+              '',
+              contains(
+                'No parameter #3 (three)',
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('should support missing options', () {
+        final args = StringArgs.empty;
+        expect(args.getOption('foo').wasPresent, isFalse);
+        expect(args.getOption('foo'), hasLength(0));
       });
 
       test('should support single value options', () {
