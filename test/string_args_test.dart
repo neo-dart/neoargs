@@ -239,5 +239,77 @@ void main() {
         );
       });
     });
+
+    group('.parse', () {
+      test('should parse empty arguments', () {
+        expect(StringArgs.parse([]), StringArgs.empty);
+      });
+
+      test('should parse positional parameters', () {
+        expect(StringArgs.parse(['a']), StringArgs.from(['a']));
+        expect(StringArgs.parse(['a', 'bee']), StringArgs.from(['a', 'bee']));
+      });
+
+      group('should parse options', () {
+        test('single flag-like "-a"', () {
+          expect(StringArgs.parse(['-a']), StringArgs.from([], {'a': ''}));
+        });
+
+        test('single with value "-a1"', () {
+          expect(StringArgs.parse(['-a1']), StringArgs.from([], {'a': '1'}));
+        });
+
+        test('single with value "-a 1"', () {
+          expect(StringArgs.parse(['-a 1']), StringArgs.from([], {'a': '1'}));
+        });
+
+        test('multiple with values "-a 1 -a 2"', () {
+          expect(
+            StringArgs.parse([
+              '-a 1',
+              '-a -2',
+            ]),
+            StringArgs.from([], {
+              'a': ['1', '2']
+            }),
+          );
+        });
+      });
+
+      group('should parse long options', () {
+        test('single flag-like "--name"', () {
+          expect(
+            StringArgs.parse(['--name']),
+            StringArgs.from([], {'name': ''}),
+          );
+        });
+
+        test('single with value "--name 1"', () {
+          expect(
+            StringArgs.parse(['--name 1']),
+            StringArgs.from([], {'name': '1'}),
+          );
+        });
+
+        test('single with value "--name=1"', () {
+          expect(
+            StringArgs.parse(['--name=1']),
+            StringArgs.from([], {'name': '1'}),
+          );
+        });
+
+        test('multiple with values "--name 1 --name 2', () {
+          expect(
+            StringArgs.parse([
+              '--name 1',
+              '--name -2',
+            ]),
+            StringArgs.from([], {
+              'name': ['1', '2']
+            }),
+          );
+        });
+      });
+    });
   });
 }

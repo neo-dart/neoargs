@@ -1,6 +1,6 @@
 name: neoargs
 description: A fluent and idiomatic argument parser (usually for command-line apps) in Dart.
-version: 0.0.0
+version: 0.0.1
 homepage: https://github.com/neo-dart/neoargs
 
 environment:

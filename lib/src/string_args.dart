@@ -125,10 +125,12 @@ abstract class StringArgs {
       if (!longOption) {
         // Short options are either "-nvalue" or "-n value".
         name = arg[1];
-        value = arg.substring(arg.codeUnitAt(2) == $space ? 3 : 2);
+        value = arg.length > 2
+            ? arg.substring(arg.codeUnitAt(2) == $space ? 3 : 2)
+            : '';
       } else {
         // Long options are either "--name value" or "--name=value".
-        var delimiter = arg.length - 1;
+        var delimiter = arg.length;
         for (var i = 2; i < arg.length; i++) {
           final codeUnit = arg.codeUnitAt(i);
           if (codeUnit == $equals || codeUnit == $space) {
@@ -136,8 +138,8 @@ abstract class StringArgs {
             break;
           }
         }
-        name = arg.substring(0, delimiter);
-        value = arg.substring(delimiter + 1);
+        name = arg.substring(2, delimiter);
+        value = arg.substring(delimiter);
       }
 
       (options[name] ??= []).add(value);
