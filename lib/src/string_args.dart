@@ -14,7 +14,7 @@ part of '../neoargs.dart';
 /// /// Example that parses `<source> --recursive` and calls [File.createSync].
 /// void main(List<String> args) {
 ///   final parsed = StringArgs.parse(args);
-///   final target = parsed.requireParameter(0, 'target');
+///   final target = parsed.requireParameter(0, debugName: 'target');
 ///   final recursive = parsed.getOption('recursive').optionalOnce() == '';
 ///   File(target).createSync(recursive: recursive);
 /// }
