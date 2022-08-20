@@ -23,10 +23,3 @@ This library supports parsing [GNU][] and [POSIX][]-style options.
 
 [gnu]: https://www.gnu.org/prep/standards/standards.html#Command_002dLine-Interfaces
 [posix]: https://pubs.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap12.html#tag_12_02
-
-## Usage
-
-```dart
-// [-x, 3, -y, 4, -abc, -beep=boop, foo, bar, baz]
-print(argv('-x 3 -y 4 -abc -beep=boop foo "bar" \'baz\''));
-```
