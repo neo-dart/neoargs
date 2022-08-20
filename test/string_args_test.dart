@@ -305,7 +305,7 @@ void main() {
 
         test('single with value "--name 1"', () {
           expect(
-            StringArgs.parse(['--name 1']),
+            StringArgs.parse(['--name', '1']),
             StringArgs.from([], {'name': '1'}),
           );
         });
@@ -320,8 +320,10 @@ void main() {
         test('multiple with values "--name 1 --name 2', () {
           expect(
             StringArgs.parse([
-              '--name 1',
-              '--name -2',
+              '--name',
+              '1',
+              '--name',
+              '2',
             ]),
             StringArgs.from([], {
               'name': ['1', '2']

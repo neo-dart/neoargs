@@ -90,68 +90,53 @@ abstract class StringArgs {
   /// from a `void main(List<String> args)` function, created by [argv], or
   /// something similar.
   factory StringArgs.parse(List<String> args) {
-    const $space = 0x20;
-    const $dash = 0x2d;
-    const $equals = 0x3d;
-
     final parameters = <String>[];
     final options = <String, List<String>>{};
 
-    // True once '--' is parsed an argument.
-    var reachedEndOfOptions = false;
+    String? option;
 
-    for (final arg in args) {
-      // If we've already parsed "--", the argument is empty, or not an option.
-      if (reachedEndOfOptions || arg.isEmpty || arg.codeUnitAt(0) != $dash) {
-        parameters.add(arg);
-        continue;
+    void ifPreviousOptionThenClear() {
+      final o = option;
+      if (o != null) {
+        (options[o] ??= []).add('');
       }
-
-      // Spot check that the logic above is WAI, i.e. all options at this point.
-      assert(arg.codeUnitAt(0) == $dash, 'Expected "-", got "${arg[0]}"');
-
-      // "Long" option, i.e. "--name" versus "-n".
-      final longOption = arg.length > 1 && arg.codeUnitAt(1) == $dash;
-
-      // An explicit parsing of "--" means "stop parsing options going forward".
-      if (longOption && arg.length == 2) {
-        reachedEndOfOptions = true;
-        continue;
-      }
-
-      final String name;
-      final String value;
-
-      if (!longOption) {
-        // Short options are either "-nvalue" or "-n value".
-        name = arg[1];
-        value = arg.length > 2
-            ? arg.substring(arg.codeUnitAt(2) == $space ? 3 : 2)
-            : '';
-      } else {
-        // Long options are either "--name value" or "--name=value".
-        var delimiter = arg.length;
-        for (var i = 2; i < arg.length; i++) {
-          final codeUnit = arg.codeUnitAt(i);
-          if (codeUnit == $equals || codeUnit == $space) {
-            delimiter = i;
-            break;
-          }
-        }
-        name = arg.substring(2, delimiter);
-        value = arg.substring(delimiter);
-      }
-
-      (options[name] ??= []).add(value);
+      option = null;
     }
+
+    _StringArgsParser(
+      onValue: (v) {
+        final o = option;
+
+        // Whether a plain value was parsed.
+        if (o == null) {
+          parameters.add(v);
+          return;
+        }
+
+        // Whether a value was parsed associated with a prior option.
+        (options[o] ??= []).add(v);
+        option = null;
+      },
+      onOption: (o) {
+        ifPreviousOptionThenClear();
+        option = o;
+      },
+      onOptionWithValue: (o, v) {
+        ifPreviousOptionThenClear();
+        (options[o] ??= []).add(v);
+      },
+    ).parse(args);
+
+    ifPreviousOptionThenClear();
+
     return _StringArgs(
       parameters,
       options.map(
-        (k, v) => MapEntry(
-          k,
-          v.length > 1
-              ? StringArgsOption.manyValues(k, v)
-              : StringArgsOption.oneValue(k, v.first),
+        (option, values) => MapEntry(
+          option,
+          values.length > 1
+              ? StringArgsOption.manyValues(option, values)
+              : StringArgsOption.oneValue(option, values.first),
         ),
       ),
     );
